@@ -1,0 +1,45 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: spyware
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
+      POSTGRES_DB: spyware
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U spyware"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://spyware:${DB_PASSWORD:-password}@postgres:5432/spyware
+      SERVER_HOST: "0.0.0.0"
+      SERVER_PORT: "7980"
+      RELAY_ENABLED: "${RELAY_ENABLED:-false}"
+      RELAY_HOST: "0.0.0.0"
+      RELAY_PORT: "7981"
+      UPDATES_DIR: /updates
+      RUST_LOG: azuldesk_server=info
+    ports:
+      - "7980:7980"
+      - "7981:7981"
+    volumes:
+      - updates:/updates
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  updates:
