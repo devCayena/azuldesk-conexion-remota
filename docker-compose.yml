@@ -32,6 +32,7 @@ services:
       RELAY_HOST: "${RELAY_HOST}:-0.0.0.0"
       RELAY_PORT: "${RELAY_PORT}:-7981"
       UPDATES_DIR: /updates
+      LOG_DIR: /logs
       RUST_LOG: azuldesk_server=info
     ports:
       - "7980:7980"
