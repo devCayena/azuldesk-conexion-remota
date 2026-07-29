@@ -26,11 +26,11 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgres://spyware:${DB_PASSWORD:-password}@postgres:5432/spyware
-      SERVER_HOST: "0.0.0.0"
-      SERVER_PORT: "7980"
+      SERVER_HOST: "${SERVER_HOST}:-0.0.0.0"
+      SERVER_PORT: "${SERVER_PORT}:-7980"
       RELAY_ENABLED: "${RELAY_ENABLED:-false}"
-      RELAY_HOST: "0.0.0.0"
-      RELAY_PORT: "7981"
+      RELAY_HOST: "${RELAY_HOST}:-0.0.0.0"
+      RELAY_PORT: "${RELAY_PORT}:-7981"
       UPDATES_DIR: /updates
       RUST_LOG: azuldesk_server=info
     ports:
