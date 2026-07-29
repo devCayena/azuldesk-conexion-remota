@@ -6,7 +6,7 @@ RUN apk add --no-cache musl-dev
 WORKDIR /app
 
 # Copiar solo lo necesario para compilar
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml ./
 COPY core/ core/
 COPY server/ server/
 

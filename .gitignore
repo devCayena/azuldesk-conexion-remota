@@ -1,6 +1,6 @@
 /target
 **/*.rs.bk
-Cargo.lock
+# Cargo.lock se trackea para builds determinísticos (app binaria)
 .env
 *.log
 *.iml
