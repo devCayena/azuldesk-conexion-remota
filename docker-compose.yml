@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
       POSTGRES_DB: spyware
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql
       - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
     restart: unless-stopped
     healthcheck:
