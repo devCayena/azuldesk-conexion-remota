@@ -56,7 +56,25 @@ CREATE TRIGGER trg_device_registry_updated_at
     BEFORE UPDATE ON device_registry
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
--- ─── 3. Certificados ─────────────────────────────────────
+-- ─── 3. Claves maestras horarias ─────────────────────────
+CREATE TABLE IF NOT EXISTS master_keys (
+    id              BIGSERIAL PRIMARY KEY,
+    key_hash        TEXT NOT NULL,
+    key_plaintext   TEXT NOT NULL DEFAULT '',
+    valid_from      TIMESTAMPTZ NOT NULL,
+    valid_until     TIMESTAMPTZ NOT NULL,
+    created_by      BIGINT REFERENCES users(id),
+    generated_by    TEXT NOT NULL DEFAULT 'auto',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+DROP TRIGGER IF EXISTS trg_master_keys_updated_at ON master_keys;
+CREATE TRIGGER trg_master_keys_updated_at
+    BEFORE UPDATE ON master_keys
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- ─── 4. Certificados ─────────────────────────────────────
 CREATE TABLE IF NOT EXISTS certificates (
     id                      BIGSERIAL PRIMARY KEY,
     serial_number           TEXT NOT NULL REFERENCES device_registry(serial_number),
@@ -76,24 +94,6 @@ CREATE TABLE IF NOT EXISTS certificates (
 DROP TRIGGER IF EXISTS trg_certificates_updated_at ON certificates;
 CREATE TRIGGER trg_certificates_updated_at
     BEFORE UPDATE ON certificates
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-
--- ─── 4. Claves maestras horarias ─────────────────────────
-CREATE TABLE IF NOT EXISTS master_keys (
-    id              BIGSERIAL PRIMARY KEY,
-    key_hash        TEXT NOT NULL,
-    key_plaintext   TEXT NOT NULL DEFAULT '',
-    valid_from      TIMESTAMPTZ NOT NULL,
-    valid_until     TIMESTAMPTZ NOT NULL,
-    created_by      BIGINT REFERENCES users(id),
-    generated_by    TEXT NOT NULL DEFAULT 'auto',
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-DROP TRIGGER IF EXISTS trg_master_keys_updated_at ON master_keys;
-CREATE TRIGGER trg_master_keys_updated_at
-    BEFORE UPDATE ON master_keys
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ─── 5. Auditoría de conexiones ─────────────────────────
@@ -118,7 +118,7 @@ CREATE TRIGGER trg_audit_log_updated_at
     BEFORE UPDATE ON audit_log
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
--- ─── 7. CA interna ───────────────────────────────────────
+-- ─── 6. CA interna ───────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ca_keys (
     id          INTEGER PRIMARY KEY CHECK (id = 1),
     ca_cert_pem TEXT NOT NULL,
