@@ -38,13 +38,17 @@ mkdir -p "$DIR/updates"
 
 # ─── 3. Crear .env para docker-compose ────────────────────
 echo "[3/5] Creando .env..."
+# Forzamos 0.0.0.0 para bind interno del contenedor
+# (el dominio público se configura en el cliente Flutter)
+BIND_HOST="0.0.0.0"
+
 if [ ! -f "$DIR/.env" ]; then
     cat > "$DIR/.env" <<EOF
 DB_PASSWORD=$SPYWARE_PASS
-SERVER_HOST=$SERVER_HOST
+SERVER_HOST=$BIND_HOST
 SERVER_PORT=$SERVER_PORT
 RELAY_ENABLED=$RELAY_ENABLED
-RELAY_HOST=$SERVER_HOST
+RELAY_HOST=$BIND_HOST
 RELAY_PORT=$RELAY_PORT
 UPDATES_DIR=/updates
 RUST_LOG=azuldesk_server=info
