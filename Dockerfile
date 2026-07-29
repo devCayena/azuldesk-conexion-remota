@@ -9,6 +9,7 @@ WORKDIR /app
 COPY Cargo.toml ./
 COPY core/ core/
 COPY server/ server/
+COPY relay/ relay/
 
 # Compilar en release (estático con musl)
 RUN cargo build --release -p azuldesk-server && \
