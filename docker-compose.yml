@@ -37,9 +37,9 @@ services:
       - "7980:7980"
       - "7981:7981"
     volumes:
-      - updates:/updates
+      - ./updates:/updates
+      - ./logs:/logs
     restart: unless-stopped
 
 volumes:
   pgdata:
-  updates:
