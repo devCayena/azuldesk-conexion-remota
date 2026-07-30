@@ -1,7 +1,1 @@
-{
-  "version": "1.0.0",
-  "download_url": "spyware-1.0.0.apk",
-  "checksum": "sha256checksumdelarchivo",
-  "mandatory": false,
-  "release_notes": "Primera versión estable"
-}
+{"release_notes":"","checksum":"98e5bdef88258af2278104eeb2f00ffdc256de2ae62a9db2469685cbee4cdd6c","version":"1.0.0","mandatory":false,"download_url":"azulremote-1.0.0.zip"}

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 
+use crate::audio_relay;
 use crate::AppState;
 use crate::db::{AuditRecord, MasterKeyRecord};
 
@@ -43,7 +44,7 @@ async fn require_admin(state: &AppState, headers: &HeaderMap) -> Result<(i64, St
 pub struct LoginRequest { pub email: String, pub password: String }
 
 #[derive(Serialize)]
-pub struct LoginResponse { pub user_id: i64, pub name: String, pub is_admin: bool }
+pub struct LoginResponse { pub user_id: i64, pub name: String, pub is_admin: bool, pub role: String }
 
 #[derive(Deserialize)]
 pub struct RegisterDeviceRequest {
@@ -71,6 +72,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/master-keys/validate", post(validate_key))
         .route("/api/audit", get(get_audit))
         .route("/api/audit/user/{user_id}", get(get_user_audit))
+        .route("/audio/{session_id}", get(audio_relay::handle_audio))
         .layer(CorsLayer::new().allow_origin(Any))
         .with_state(state)
 }
@@ -83,7 +85,7 @@ async fn login(State(state): State<Arc<AppState>>, Json(req): Json<LoginRequest>
     if !bcrypt::verify(&req.password, &user.password_hash).unwrap_or(false) {
         return Err(StatusCode::UNAUTHORIZED);
     }
-    Ok(Json(LoginResponse { user_id: user.id, name: user.name, is_admin: user.is_admin }))
+    Ok(Json(LoginResponse { user_id: user.id, name: user.name, is_admin: user.is_admin, role: user.role }))
 }
 
 // ─── Devices ──────────────────────────────────────────

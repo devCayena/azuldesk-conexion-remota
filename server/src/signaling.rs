@@ -72,7 +72,7 @@ pub async fn handle_connection(
                         broadcast_peers(&state).await;
                     }
 
-                    SignalingMessage::ConnectRequest { target_id, auth } => {
+                    SignalingMessage::ConnectRequest { target_id: _target_id, auth } => {
                         if let Some(from_id) = current_id {
                             if let Some(from) = state.peers.read().await.get(&from_id).cloned() {
                                 // Verify certificate if present

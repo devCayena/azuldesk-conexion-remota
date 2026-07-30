@@ -11,42 +11,50 @@ impl Database {
         let pool = PgPoolOptions::new().max_connections(20).connect(database_url).await?;
 
         // Migración automática de columnas faltantes (para DBs existentes)
-        // updated_at en todas las tablas
+        // Migraciones automáticas
         for table in &["users", "device_registry", "certificates", "master_keys", "audit_log", "ca_keys"] {
             sqlx::query(&format!("ALTER TABLE {} ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()", table))
                 .execute(&pool).await.ok();
         }
+        // Migración: agregar columna role a users si no existe
+        sqlx::query("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'support'")
+            .execute(&pool).await.ok();
+        sqlx::query("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check")
+            .execute(&pool).await.ok();
+        // Actualizar admins existentes
+        sqlx::query("UPDATE users SET role = 'admin' WHERE is_admin = true AND role = 'support'")
+            .execute(&pool).await.ok();
 
         Ok(Self { pool })
     }
 
     // ─── Users ──────────────────────────────────────────
 
-    pub async fn create_user(&self, id_number: &str, name: &str, email: &str, password_hash: &str, is_admin: bool) -> Result<i64> {
+    pub async fn create_user(&self, id_number: &str, name: &str, email: &str, password_hash: &str, is_admin: bool, role: &str) -> Result<i64> {
         let row: (i64,) = sqlx::query_as(
-            "INSERT INTO users (identification_number, name, email, password_hash, is_admin) VALUES ($1,$2,$3,$4,$5) RETURNING id"
-        ).bind(id_number).bind(name).bind(email).bind(password_hash).bind(is_admin)
+            "INSERT INTO users (identification_number, name, email, password_hash, is_admin, role) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id"
+        ).bind(id_number).bind(name).bind(email).bind(password_hash).bind(is_admin).bind(role)
          .fetch_one(&self.pool).await?;
         Ok(row.0)
     }
 
     pub async fn get_user_by_email(&self, email: &str) -> Result<Option<UserRecord>> {
         let user = sqlx::query_as::<_, UserRecord>(
-            "SELECT id, identification_number, name, email, password_hash, is_admin, active FROM users WHERE email = $1"
+            "SELECT id, identification_number, name, email, password_hash, is_admin, active, role FROM users WHERE email = $1"
         ).bind(email).fetch_optional(&self.pool).await?;
         Ok(user)
     }
 
     pub async fn get_user_by_id(&self, id: i64) -> Result<Option<UserRecord>> {
         let user = sqlx::query_as::<_, UserRecord>(
-            "SELECT id, identification_number, name, email, password_hash, is_admin, active FROM users WHERE id = $1"
+            "SELECT id, identification_number, name, email, password_hash, is_admin, active, role FROM users WHERE id = $1"
         ).bind(id).fetch_optional(&self.pool).await?;
         Ok(user)
     }
 
     pub async fn list_users(&self) -> Result<Vec<UserRecord>> {
         let users = sqlx::query_as::<_, UserRecord>(
-            "SELECT id, identification_number, name, email, password_hash, is_admin, active FROM users ORDER BY name"
+            "SELECT id, identification_number, name, email, password_hash, is_admin, active, role FROM users ORDER BY name"
         ).fetch_all(&self.pool).await?;
         Ok(users)
     }
@@ -214,6 +222,7 @@ pub struct UserRecord {
     pub password_hash: String,
     pub is_admin: bool,
     pub active: bool,
+    pub role: String,
 }
 
 #[derive(Debug, sqlx::FromRow)]

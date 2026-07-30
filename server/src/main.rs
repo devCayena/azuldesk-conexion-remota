@@ -2,6 +2,7 @@ mod api;
 mod db;
 mod ca;
 mod signaling;
+mod audio_relay;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -28,7 +29,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Crear un usuario administrador
+    /// Crear un usuario (admin o support)
     CreateAdmin {
         #[arg(long)]
         id: String,
@@ -38,6 +39,8 @@ enum Commands {
         email: String,
         #[arg(long)]
         password: String,
+        #[arg(long, default_value = "admin")]
+        role: String,
     },
     /// Iniciar el servidor
     #[command(hide = true)]
@@ -72,11 +75,12 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Some(Commands::CreateAdmin { id, name, email, password }) => {
+        Some(Commands::CreateAdmin { id, name, email, password, role }) => {
             let hash = bcrypt::hash(&password, 12)?;
             let db = Database::open(&cli.database_url).await?;
-            let user_id = db.create_user(&id, &name, &email, &hash, true).await?;
-            println!("Admin created: id={}, email={}, user_id={}", id, email, user_id);
+            let is_admin = role == "admin";
+            let user_id = db.create_user(&id, &name, &email, &hash, is_admin, &role).await?;
+            println!("User created: id={}, email={}, role={}, user_id={}", id, email, role, user_id);
             return Ok(());
         }
         Some(Commands::Serve { host, port, relay_enabled, relay_host, relay_port }) => {

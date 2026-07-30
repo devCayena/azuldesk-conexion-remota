@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS users (
     name                  TEXT NOT NULL,
     email                 TEXT UNIQUE NOT NULL,
     password_hash         TEXT NOT NULL,
-    is_admin              BOOLEAN NOT NULL DEFAULT false,
+    role                  TEXT NOT NULL DEFAULT 'support' CHECK (role IN ('admin', 'support')),
     active                BOOLEAN NOT NULL DEFAULT true,
     created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
