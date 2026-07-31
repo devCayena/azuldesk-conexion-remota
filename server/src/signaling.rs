@@ -39,6 +39,7 @@ pub async fn handle_connection(
     let mut current_id: Option<PeerId> = None;
     let mut current_log_id: Option<i64> = None;
     let mut brx = state.broadcast.subscribe();
+    let (peer_tx, mut peer_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
 
     loop {
         tokio::select! {
@@ -186,6 +187,7 @@ pub async fn handle_connection(
                             last_seen: chrono_now(),
                         };
                         state.peers.write().await.insert(peer_id, online);
+                        state.peer_channels.write().await.insert(peer_id, peer_tx.clone());
                         current_id = Some(peer_id);
                         tracing::info!("Registered: {} ({})", short_id, addr.ip());
 
@@ -234,9 +236,14 @@ pub async fn handle_connection(
                                     },
                                     session_id,
                                 };
-                                if let Ok(json) = serde_json::to_string(&req) {
-                                    let _ = state.broadcast.send(json);
+                                // Enviar SOLO al objetivo (no broadcast)
+                                if let Some(tx) = state.peer_channels.read().await.get(&_target_id) {
+                                    if let Ok(json) = serde_json::to_string(&req) {
+                                        let _ = tx.send(json);
+                                    }
                                 }
+                                // Recordar el solicitante de esta sesión para rutear la respuesta
+                                state.sessions.write().await.insert(session_id, from_id);
                             }
                         }
                     }
@@ -245,8 +252,13 @@ pub async fn handle_connection(
                         let resp = SignalingMessage::ConnectResponse {
                             accepted, session_id, target_ip, target_port, reason,
                         };
+                        // Enviar SOLO al solicitante de la sesión (no broadcast)
                         if let Ok(json) = serde_json::to_string(&resp) {
-                            let _ = state.broadcast.send(json);
+                            if let Some(requester) = state.sessions.read().await.get(&session_id).cloned() {
+                                if let Some(tx) = state.peer_channels.read().await.get(&requester) {
+                                    let _ = tx.send(json);
+                                }
+                            }
                         }
                     }
 
@@ -265,11 +277,23 @@ pub async fn handle_connection(
                     Err(_) => break,
                 }
             }
+
+            peer_msg = peer_rx.recv() => {
+                match peer_msg {
+                    Some(msg) => { if ws_tx.send(msg.into()).await.is_err() { break; } }
+                    None => break,
+                }
+            }
         }
     }
 
     if let Some(id) = current_id {
         state.peers.write().await.remove(&id);
+        state.peer_channels.write().await.remove(&id);
+        {
+            let mut sessions = state.sessions.write().await;
+            sessions.retain(|_, requester| *requester != id);
+        }
         tracing::info!("Peer {} disconnected from {}", id, addr);
         broadcast_peers(&state).await;
     }

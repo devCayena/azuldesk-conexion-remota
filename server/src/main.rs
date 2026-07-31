@@ -61,6 +61,8 @@ enum Commands {
 pub struct AppState {
     pub peers: tokio::sync::RwLock<std::collections::HashMap<azuldesk_core::types::PeerId, azuldesk_core::protocol::OnlinePeer>>,
     pub broadcast: broadcast::Sender<String>,
+    pub peer_channels: tokio::sync::RwLock<std::collections::HashMap<azuldesk_core::types::PeerId, tokio::sync::mpsc::UnboundedSender<String>>>,
+    pub sessions: tokio::sync::RwLock<std::collections::HashMap<azuldesk_core::types::SessionId, azuldesk_core::types::PeerId>>,
     pub db: Database,
     pub ca: CertificateAuthority,
     pub relay_enabled: bool,
@@ -149,6 +151,8 @@ async fn run_server(database_url: String, host: String, port: u16, relay_enabled
     let state = Arc::new(AppState {
         peers: tokio::sync::RwLock::new(std::collections::HashMap::new()),
         broadcast: broadcast_tx,
+        peer_channels: tokio::sync::RwLock::new(std::collections::HashMap::new()),
+        sessions: tokio::sync::RwLock::new(std::collections::HashMap::new()),
         db,
         ca,
         relay_enabled,
