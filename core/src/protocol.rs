@@ -8,6 +8,7 @@ pub enum SignalingMessage {
     Register {
         device: DeviceInfo,
         listen_port: u16,
+        certificate: Option<String>,
     },
     Registered {
         peer_id: PeerId,
@@ -35,6 +36,12 @@ pub enum SignalingMessage {
         target_ip: Option<String>,
         target_port: Option<u16>,
         reason: Option<String>,
+    },
+
+    // Device certificate (sent to client on first registration)
+    Certificate {
+        cert_pem: String,
+        serial_number: String,
     },
 
     // Control
