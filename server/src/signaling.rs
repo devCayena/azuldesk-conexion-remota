@@ -104,36 +104,41 @@ pub async fn handle_connection(
                                     }
                                     continue;
                                 }
-                                // Si el cliente presenta certificado, verificar que coincida con el de la DB
-                                // y que el binding serial/peer_id embebido sea correcto.
+                                // Si el cliente presenta certificado, verificar que coincida con un
+                                // certificado ACTIVO del serial en la DB. Si coincide (DER), es
+                                // prueba suficiente de identidad: el propio servidor lo emitió.
+                                // El binding serial/peer_id se usa solo como validación secundaria
+                                // (acepta certs emitidos por versiones anteriores sin esos campos).
                                 if let Some(ref client_cert) = certificate {
-                                    let db_pem = state.db.get_certificate_pem(&sn).await.ok().flatten();
-                                    if let Some(ref expected) = db_pem {
-                                        let expected_der = cert_der(expected);
-                                        let client_der = cert_der(client_cert);
-                                        if let (Some(e), Some(c)) = (expected_der, client_der) {
-                                            if e != c {
-                                                let err = SignalingMessage::Error {
-                                                    code: 403,
-                                                    message: "Certificado no válido para este equipo".into(),
-                                                };
-                                                if let Ok(json) = serde_json::to_string(&err) {
-                                                    let _ = ws_tx.send(json.into()).await;
+                                    let active_certs = state.db.get_active_certificates(&sn).await.unwrap_or_default();
+                                    let client_der = cert_der(client_cert);
+                                    let mut matched = false;
+                                    if let Some(cd) = client_der {
+                                        for stored in &active_certs {
+                                            if let Some(sd) = cert_der(stored) {
+                                                if sd == cd {
+                                                    matched = true;
+                                                    break;
                                                 }
-                                                continue;
                                             }
                                         }
                                     }
-                                    if let Err(e) = state.ca.verify_device_binding(client_cert, &sn, &peer_id.to_string()) {
-                                        tracing::warn!("cert binding failed: {}", e);
-                                        let err = SignalingMessage::Error {
-                                            code: 403,
-                                            message: "Certificado no válido para este equipo".into(),
-                                        };
-                                        if let Ok(json) = serde_json::to_string(&err) {
-                                            let _ = ws_tx.send(json.into()).await;
+                                    if matched {
+                                        tracing::info!("certificate matched for {} ({} certs active)", sn, active_certs.len());
+                                    } else {
+                                        // No coincide con la DB: solo aceptar si el binding es válido
+                                        // (cert emitido por nuestra CA con serial/peer_id correctos).
+                                        if let Err(e) = state.ca.verify_device_binding(client_cert, &sn, &peer_id.to_string()) {
+                                            tracing::warn!("cert binding failed for {}: {}", sn, e);
+                                            let err = SignalingMessage::Error {
+                                                code: 403,
+                                                message: "Certificado no válido para este equipo".into(),
+                                            };
+                                            if let Ok(json) = serde_json::to_string(&err) {
+                                                let _ = ws_tx.send(json.into()).await;
+                                            }
+                                            continue;
                                         }
-                                        continue;
                                     }
                                 }
                             }

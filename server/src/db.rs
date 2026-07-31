@@ -125,6 +125,15 @@ impl Database {
         Ok(pem)
     }
 
+    /// Devuelve todos los certificados ACTIVOS de un serial (un dispositivo puede
+    /// tener varios si se re-emitió; cualquiera de ellos es válido).
+    pub async fn get_active_certificates(&self, sn: &str) -> Result<Vec<String>> {
+        let pems = sqlx::query_scalar(
+            "SELECT certificate_pem FROM certificates WHERE serial_number = $1 AND status = 'active' ORDER BY issued_at DESC"
+        ).bind(sn).fetch_all(&self.pool).await?;
+        Ok(pems)
+    }
+
     pub async fn block_certificate(&self, sn: &str, blocked_by: i64) -> Result<()> {
         sqlx::query(
             "UPDATE certificates SET status = 'blocked', blocked_at = NOW(), blocked_by = $2 WHERE serial_number = $1 AND status = 'active'"
