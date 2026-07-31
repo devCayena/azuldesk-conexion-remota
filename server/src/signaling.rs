@@ -148,6 +148,12 @@ pub async fn handle_connection(
                             ).await {
                                 tracing::warn!("audit log failed: {}", e);
                             }
+                            // Mantener el hostname del equipo actualizado en la DB
+                            // (register_device hace UPDATE si el serial ya existe).
+                            let _ = state.db.register_device(
+                                &sn, rec.owner_user_id.unwrap_or(1), 1,
+                                &device.hostname, &sn,
+                            ).await;
                         } else {
                             // Primera vez: crear dispositivo y emitir certificado
                             // vinculado a serial + peer_id derivado.
