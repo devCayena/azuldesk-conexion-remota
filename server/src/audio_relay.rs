@@ -1,52 +1,53 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Mutex, OnceLock};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Path, State};
+use axum::extract::Path;
 use axum::response::IntoResponse;
-use futures_util::StreamExt;
-use tokio::sync::Mutex;
-use crate::AppState;
-
-type AudioSessions = Arc<Mutex<HashMap<String, AudioSession>>>;
+use futures_util::{SinkExt, StreamExt};
+use tokio::sync::mpsc;
 
 struct AudioSession {
-    peer_a: Option<tokio::sync::mpsc::UnboundedSender<Vec<u8>>>,
-    peer_b: Option<tokio::sync::mpsc::UnboundedSender<Vec<u8>>>,
+    peer_a: Option<mpsc::UnboundedSender<Vec<u8>>>,
+    peer_b: Option<mpsc::UnboundedSender<Vec<u8>>>,
 }
 
-fn sessions() -> AudioSessions {
-    Arc::new(Mutex::new(HashMap::new()))
+fn sessions() -> &'static Mutex<HashMap<String, AudioSession>> {
+    static INSTANCE: OnceLock<Mutex<HashMap<String, AudioSession>>> = OnceLock::new();
+    INSTANCE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 pub async fn handle_audio(
     ws: WebSocketUpgrade,
     Path(session_id): Path<String>,
-    State(_state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     ws.on_upgrade(move |socket| audio_session(socket, session_id))
 }
 
 async fn audio_session(mut ws: WebSocket, session_id: String) {
     let sessions = sessions();
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-    let my_id: u8;
+    let (tx, mut rx) = mpsc::unbounded_channel::<Vec<u8>>();
 
-    {
-        let mut map = sessions.lock().await;
+    let (my_id, room_full) = {
+        let mut map = sessions.lock().unwrap();
         let entry = map.entry(session_id.clone()).or_insert(AudioSession {
             peer_a: None,
             peer_b: None,
         });
         if entry.peer_a.is_none() {
             entry.peer_a = Some(tx);
-            my_id = 0;
+            (0u8, false)
         } else if entry.peer_b.is_none() {
             entry.peer_b = Some(tx);
-            my_id = 1;
+            (1u8, false)
         } else {
-            tracing::warn!("Audio session {} full, rejecting", session_id);
-            return;
+            (0u8, true)
         }
+    };
+
+    if room_full {
+        tracing::warn!("Audio session {} full, rejecting", session_id);
+        let _ = ws.close().await;
+        return;
     }
 
     tracing::info!("Audio peer {} joined session {}", my_id, session_id);
@@ -56,12 +57,14 @@ async fn audio_session(mut ws: WebSocket, session_id: String) {
             msg = ws.next() => {
                 match msg {
                     Some(Ok(Message::Binary(data))) => {
-                        let map = sessions.lock().await;
-                        if let Some(entry) = map.get(&session_id) {
-                            let target = if my_id == 0 { &entry.peer_b } else { &entry.peer_a };
-                            if let Some(tx) = target {
-                                let _ = tx.send(data.to_vec());
-                            }
+                        let target = {
+                            let map = sessions.lock().unwrap();
+                            map.get(&session_id).and_then(|entry| {
+                                if my_id == 0 { entry.peer_b.clone() } else { entry.peer_a.clone() }
+                            })
+                        };
+                        if let Some(tx) = target {
+                            let _ = tx.send(data.to_vec());
                         }
                     }
                     Some(Ok(Message::Close(_))) | None => break,
@@ -78,7 +81,7 @@ async fn audio_session(mut ws: WebSocket, session_id: String) {
         }
     }
 
-    let mut map = sessions.lock().await;
+    let mut map = sessions.lock().unwrap();
     if let Some(entry) = map.get_mut(&session_id) {
         if my_id == 0 {
             entry.peer_a = None;
