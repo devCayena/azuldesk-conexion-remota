@@ -3,6 +3,7 @@ mod db;
 mod ca;
 mod signaling;
 mod audio_relay;
+mod session_relay;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};

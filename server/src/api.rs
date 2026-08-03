@@ -9,6 +9,7 @@ use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::audio_relay;
+use crate::session_relay;
 use crate::AppState;
 use crate::db::{AuditRecord, MasterKeyRecord};
 
@@ -73,6 +74,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/audit", get(get_audit))
         .route("/api/audit/user/{user_id}", get(get_user_audit))
         .route("/audio/{session_id}", get(audio_relay::handle_audio))
+        .route("/session/{session_id}", get(session_relay::handle_session))
         .layer(CorsLayer::new().allow_origin(Any))
         .with_state(state)
 }
