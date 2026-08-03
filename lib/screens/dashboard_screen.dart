@@ -1,5 +1,6 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
 import '../models/device_info.dart';
@@ -13,6 +14,14 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  final _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -21,7 +30,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       context.read<AppState>().connectToServer(
         _hostname(),
         _os(),
-        '1.0.0',
         7890,
       );
     });
@@ -33,8 +41,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
       backgroundColor: const Color(0xFF0D1117),
       appBar: AppBar(
         backgroundColor: const Color(0xFF161B22),
-        title: const Text('AzulDesk - Conexión Remota',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+        title: Consumer<AppState>(
+          builder: (_, state, __) => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('AzulDesk - Conexión Remota',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 18)),
+              Text('v${state.appVersion}',
+                style: const TextStyle(color: Colors.white38, fontSize: 11)),
+            ],
+          ),
+        ),
         actions: [
           Consumer<AppState>(
             builder: (_, state, _) => Padding(
@@ -70,14 +88,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
       body: Column(
         children: [
+          _DeviceIdBanner(),
           _StatusBanner(),
           Expanded(
-            child: Row(
-              children: [
-                _Sidebar(),
-                Expanded(child: _MainContent()),
-              ],
-            ),
+              child: Row(
+                children: [
+                  _Sidebar(
+                    searchQuery: _searchController.text,
+                    onSearchChanged: (q) => setState(() {}),
+                    controller: _searchController,
+                  ),
+                  Expanded(child: _MainContent()),
+                ],
+              ),
           ),
         ],
       ),
@@ -86,23 +109,65 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   String _hostname() {
     try {
-      return _runInShell('hostname').trim();
+      return Platform.localHostname;
     } catch (_) {
       return 'unknown';
     }
   }
 
   String _os() {
-    try {
-      return _runInShell('ver').trim();
-    } catch (_) {
-      return 'Windows';
-    }
+    return Platform.operatingSystem;
   }
+}
 
-  String _runInShell(String cmd) {
-    // Simplified - in real app use dart:io
-    return 'Desktop';
+class _DeviceIdBanner extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<AppState>(
+      builder: (_, state, _) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+        color: const Color(0xFF1F2937),
+        child: Row(
+          children: [
+            const Icon(Icons.vpn_key, size: 16, color: Color(0xFF58A6FF)),
+            const SizedBox(width: 8),
+            const Text('Tu ID:', style: TextStyle(color: Colors.white54, fontSize: 13)),
+            const SizedBox(width: 8),
+            SelectableText(
+              state.deviceId.isNotEmpty ? state.deviceId : 'Conectando...',
+              style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600, letterSpacing: 1),
+            ),
+            if (state.deviceId.isNotEmpty) ...[
+              const SizedBox(width: 12),
+              GestureDetector(
+                onTap: () {
+                  // Copy to clipboard
+                },
+                child: const Icon(Icons.copy, size: 14, color: Color(0xFF58A6FF)),
+              ),
+            ],
+            const Spacer(),
+            Text(state.userName, style: const TextStyle(color: Colors.white38, fontSize: 13)),
+            const SizedBox(width: 12),
+            GestureDetector(
+              onTap: () => showDialog(
+                context: context,
+                builder: (_) => _LogViewerDialog(
+                  logs: context.read<AppState>().connectionLogs,
+                ),
+              ),
+              child: const Icon(Icons.receipt_long, size: 18, color: Colors.white38),
+            ),
+            const SizedBox(width: 12),
+            GestureDetector(
+              onTap: () => context.read<AppState>().logout(),
+              child: const Icon(Icons.logout, size: 18, color: Colors.white38),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -125,7 +190,10 @@ class _StatusBanner extends StatelessWidget {
               style: const TextStyle(color: Colors.white38, fontSize: 12),
             ),
             const Spacer(),
-            Text('v1.0.0', style: const TextStyle(color: Colors.white24, fontSize: 12)),
+            Consumer<AppState>(
+              builder: (_, state, __) => Text('v${state.appVersion}',
+                  style: const TextStyle(color: Colors.white24, fontSize: 12)),
+            ),
           ],
         ),
       ),
@@ -134,6 +202,11 @@ class _StatusBanner extends StatelessWidget {
 }
 
 class _Sidebar extends StatelessWidget {
+  final String searchQuery;
+  final ValueChanged<String> onSearchChanged;
+  final TextEditingController controller;
+  const _Sidebar({required this.searchQuery, required this.onSearchChanged, required this.controller});
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -141,9 +214,13 @@ class _Sidebar extends StatelessWidget {
       color: const Color(0xFF161B22),
       child: Column(
         children: [
-          _SearchBar(),
+          _SearchBar(
+            value: searchQuery,
+            onChanged: onSearchChanged,
+            controller: controller,
+          ),
           const SizedBox(height: 8),
-          const Expanded(child: _PeerList()),
+          Expanded(child: _PeerList(query: searchQuery)),
           _ReconnectButton(),
         ],
       ),
@@ -152,14 +229,20 @@ class _Sidebar extends StatelessWidget {
 }
 
 class _SearchBar extends StatelessWidget {
+  final String value;
+  final ValueChanged<String> onChanged;
+  final TextEditingController? controller;
+  const _SearchBar({required this.value, required this.onChanged, this.controller});
+
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: TextField(
+        controller: controller,
         style: const TextStyle(color: Colors.white),
         decoration: InputDecoration(
-          hintText: 'Buscar dispositivo...',
+          hintText: 'Buscar por nombre o ID...',
           hintStyle: const TextStyle(color: Colors.white30),
           prefixIcon: const Icon(Icons.search, color: Colors.white38),
           filled: true,
@@ -173,13 +256,15 @@ class _SearchBar extends StatelessWidget {
             borderSide: const BorderSide(color: Color(0xFF30363D)),
           ),
         ),
+        onChanged: onChanged,
       ),
     );
   }
 }
 
 class _PeerList extends StatelessWidget {
-  const _PeerList();
+  final String query;
+  const _PeerList({required this.query});
 
   @override
   Widget build(BuildContext context) {
@@ -190,15 +275,22 @@ class _PeerList extends StatelessWidget {
             child: CircularProgressIndicator(color: Colors.blueGrey),
           );
         }
-        if (state.onlinePeers.isEmpty) {
+        final q = query.trim().toLowerCase();
+        final peers = q.isEmpty
+            ? state.onlinePeers
+            : state.onlinePeers.where((p) =>
+                p.hostname.toLowerCase().contains(q) ||
+                p.connectionId.toLowerCase().contains(q) ||
+                p.peerId.toLowerCase().contains(q)).toList();
+        if (peers.isEmpty) {
           return const Center(
             child: Text('No hay dispositivos en linea',
               style: TextStyle(color: Colors.white38)),
           );
         }
         return ListView.builder(
-          itemCount: state.onlinePeers.length,
-          itemBuilder: (_, i) => _PeerTile(peer: state.onlinePeers[i]),
+          itemCount: peers.length,
+          itemBuilder: (_, i) => _PeerTile(peer: peers[i]),
         );
       },
     );
@@ -222,8 +314,20 @@ class _PeerTile extends StatelessWidget {
       ),
       title: Text(peer.hostname,
         style: const TextStyle(color: Colors.white, fontSize: 14)),
-      subtitle: Text('${peer.publicIp}:${peer.listenPort}',
-        style: const TextStyle(color: Colors.white38, fontSize: 12)),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('${peer.publicIp}:${peer.listenPort}',
+            style: const TextStyle(color: Colors.white38, fontSize: 12)),
+          Text(peer.connectionId,
+            style: const TextStyle(
+              color: Color(0xFF58A6FF),
+              fontSize: 11,
+              letterSpacing: 1,
+            )),
+        ],
+      ),
       trailing: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
@@ -233,12 +337,21 @@ class _PeerTile extends StatelessWidget {
         child: const Text('Conectar',
           style: TextStyle(color: Color(0xFF238636), fontSize: 11)),
       ),
-      onTap: () {
-        context.read<AppState>().requestConnection(peer.peerId);
+      onTap: () async {
+        final state = context.read<AppState>();
+        state.requestConnection(peer.peerId);
+        final sessionId = state.sessionId;
+        if (sessionId == null) {
+          final wait = state.sessionIdCompleter;
+          await wait?.future;
+        }
+        if (!context.mounted) return;
         Navigator.push(context, MaterialPageRoute(
           builder: (_) => RemoteScreen(
             peerId: peer.peerId,
             hostname: peer.hostname,
+            sessionId: context.read<AppState>().sessionId!,
+            serverUrl: context.read<AppState>().audioUrl,
           ),
         ));
       },
@@ -265,7 +378,8 @@ class _ReconnectButton extends StatelessWidget {
                   side: const BorderSide(color: Color(0xFF30363D)),
                 ),
                 onPressed: () {
-                  state.connectToServer('Desktop', 'Windows', '1.0.0', 7890);
+                  final host = Platform.localHostname;
+                  state.connectToServer(host, Platform.operatingSystem, 7890);
                 },
               ),
             ),
@@ -293,6 +407,69 @@ class _MainContent extends StatelessWidget {
             SizedBox(height: 8),
             Text('Haz clic en un equipo para conectarte remotamente',
               style: TextStyle(color: Colors.white30, fontSize: 14)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LogViewerDialog extends StatelessWidget {
+  final List<String> logs;
+  const _LogViewerDialog({required this.logs});
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: const Color(0xFF161B22),
+      child: SizedBox(
+        width: 640,
+        height: 480,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  const Text('Registro de conexión',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                  const Spacer(),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.copy, size: 16),
+                    label: const Text('Copiar'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white70,
+                      side: const BorderSide(color: Color(0xFF30363D)),
+                    ),
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: logs.join('\n')));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Logs copiados al portapapeles')),
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white38),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(color: Color(0xFF30363D), height: 1),
+            Expanded(
+              child: logs.isEmpty
+                  ? const Center(child: Text('Sin logs',
+                      style: TextStyle(color: Colors.white38)))
+                  : ListView.builder(
+                      itemCount: logs.length,
+                      itemBuilder: (_, i) => Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+                        child: SelectableText(logs[i],
+                          style: const TextStyle(color: Colors.white54, fontSize: 11, fontFamily: 'monospace')),
+                      ),
+                    ),
+            ),
           ],
         ),
       ),

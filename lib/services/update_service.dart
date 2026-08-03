@@ -79,16 +79,37 @@ class UpdateService {
       }
     }
 
-    final ext = _getExtension();
     final dir = await getTemporaryDirectory();
+    final isZip = downloadUrl.endsWith('.zip');
+
+    if (isZip && Platform.isWindows) {
+      final zipPath = '${dir.path}/azuldesk_update.zip';
+      await File(zipPath).writeAsBytes(bytes);
+
+      final extractDir = '${dir.path}/azuldesk_update';
+      if (Directory(extractDir).existsSync()) {
+        Directory(extractDir).deleteSync(recursive: true);
+      }
+
+      await Process.run('powershell', [
+        '-Command',
+        "Expand-Archive -Path '$zipPath' -DestinationPath '$extractDir' -Force"
+      ]);
+
+      final exe = File('$extractDir/AzulRemote.exe');
+      if (exe.existsSync()) {
+        await OpenFilex.open(exe.path);
+        exit(0);
+      }
+    }
+
+    final ext = _getExtension(downloadUrl);
     final filePath = '${dir.path}/azuldesk_update$ext';
     final file = File(filePath);
     await file.writeAsBytes(bytes);
 
-    // Open file with system installer
     await OpenFilex.open(filePath);
 
-    // Delete after a delay so installer can read it first
     Future.delayed(const Duration(seconds: 10), () {
       file.delete().catchError((_) {});
     });
@@ -98,7 +119,11 @@ class UpdateService {
     }
   }
 
-  String _getExtension() {
+  String _getExtension([String? url]) {
+    if (url != null) {
+      if (url.endsWith('.zip')) return '.zip';
+      if (url.endsWith('.msi')) return '.msi';
+    }
     if (Platform.isAndroid) return '.apk';
     if (Platform.isWindows) return '.exe';
     if (Platform.isLinux) return '.AppImage';

@@ -41,6 +41,14 @@ class OnlinePeer {
     required this.lastSeen,
   });
 
+  /// ID de conexión corto en formato XXXX-XXXX-XXXX, derivado igual que el
+  /// servidor (primeros 12 chars del hash SHA-256 del serial, en mayúsculas).
+  String get connectionId {
+    final id = peerId;
+    if (id.length < 12) return id.toUpperCase();
+    return '${id.substring(0, 4)}-${id.substring(4, 8)}-${id.substring(8, 12)}'.toUpperCase();
+  }
+
   factory OnlinePeer.fromJson(Map<String, dynamic> json) => OnlinePeer(
     peerId: json['peer_id'],
     hostname: json['hostname'],

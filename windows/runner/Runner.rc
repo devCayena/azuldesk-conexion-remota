@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.spyware" "\0"
-            VALUE "FileDescription", "spyware_app" "\0"
+            VALUE "CompanyName", "CayenaAzul" "\0"
+            VALUE "FileDescription", "AzulRemote" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "spyware_app" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.spyware. All rights reserved." "\0"
-            VALUE "OriginalFilename", "spyware_app.exe" "\0"
-            VALUE "ProductName", "spyware_app" "\0"
+            VALUE "InternalName", "AzulRemote" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 CayenaAzul. All rights reserved." "\0"
+            VALUE "OriginalFilename", "AzulRemote.exe" "\0"
+            VALUE "ProductName", "AzulRemote" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
