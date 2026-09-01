@@ -157,7 +157,82 @@ class ScreenCaptureService {
     _isolate = null;
   }
 
-  static Future<Uint8List?> captureFrame({int maxDimension = 1600, int quality = 55}) async {
+  static Uint8List? captureSync({int maxDimension = 1280, int quality = 60}) {
+    if (!Platform.isWindows) return null;
+    final user32 = DynamicLibrary.open('user32.dll');
+    final gdi32 = DynamicLibrary.open('gdi32.dll');
+
+    final getSystemMetrics = user32.lookupFunction<Int32 Function(Int32), int Function(int)>('GetSystemMetrics');
+    final getDC = user32.lookupFunction<IntPtr Function(IntPtr), int Function(int)>('GetDC');
+    final releaseDC = user32.lookupFunction<Int32 Function(IntPtr, IntPtr), int Function(int, int)>('ReleaseDC');
+    final createCompatibleDC = gdi32.lookupFunction<IntPtr Function(IntPtr), int Function(int)>('CreateCompatibleDC');
+    final createCompatibleBitmap = gdi32.lookupFunction<IntPtr Function(IntPtr, Int32, Int32), int Function(int, int, int)>('CreateCompatibleBitmap');
+    final selectObject = gdi32.lookupFunction<IntPtr Function(IntPtr, IntPtr), int Function(int, int)>('SelectObject');
+    final bitBlt = gdi32.lookupFunction<Int32 Function(IntPtr, Int32, Int32, Int32, Int32, IntPtr, Int32, Int32, Uint32), int Function(int, int, int, int, int, int, int, int, int)>('BitBlt');
+    final getDIBits = gdi32.lookupFunction<Int32 Function(IntPtr, IntPtr, Uint32, Uint32, Pointer<Void>, Pointer<BITMAPINFO>, Uint32), int Function(int, int, int, int, Pointer<Void>, Pointer<BITMAPINFO>, int)>('GetDIBits');
+    final deleteDC = gdi32.lookupFunction<Int32 Function(IntPtr), int Function(int)>('DeleteDC');
+    final deleteObject = gdi32.lookupFunction<Int32 Function(IntPtr), int Function(int)>('DeleteObject');
+
+    final screenW = getSystemMetrics(0);
+    final screenH = getSystemMetrics(1);
+
+    int targetW, targetH;
+    if (screenW > screenH) {
+      targetW = maxDimension;
+      targetH = (screenH * maxDimension / screenW).round();
+    } else {
+      targetH = maxDimension;
+      targetW = (screenW * maxDimension / screenH).round();
+    }
+
+    final hdcScreen = getDC(0);
+    if (hdcScreen == 0) return null;
+
+    final hdcMem = createCompatibleDC(hdcScreen);
+    if (hdcMem == 0) { releaseDC(0, hdcScreen); return null; }
+
+    final hBitmap = createCompatibleBitmap(hdcScreen, targetW, targetH);
+    if (hBitmap == 0) { deleteDC(hdcMem); releaseDC(0, hdcScreen); return null; }
+
+    final hOld = selectObject(hdcMem, hBitmap);
+    
+    // StretchBlt para escalar en GPU (más rápido que escalar en Dart)
+    final stretchBlt = gdi32.lookupFunction<Int32 Function(IntPtr, Int32, Int32, Int32, Int32, IntPtr, Int32, Int32, Int32, Int32, Uint32), int Function(int, int, int, int, int, int, int, int, int, int, int)>('StretchBlt');
+    stretchBlt(hdcMem, 0, 0, targetW, targetH, hdcScreen, 0, 0, screenW, screenH, 0x00CC0020);
+
+    final bi = calloc<BITMAPINFO>();
+    bi.ref.bmiHeader.biSize = sizeOf<BITMAPINFOHEADER>();
+    bi.ref.bmiHeader.biWidth = targetW;
+    bi.ref.bmiHeader.biHeight = -targetH;
+    bi.ref.bmiHeader.biPlanes = 1;
+    bi.ref.bmiHeader.biBitCount = 32;
+    bi.ref.bmiHeader.biCompression = 0;
+
+    final bufSize = targetW * targetH * 4;
+    final buffer = calloc<Uint8>(bufSize);
+    getDIBits(hdcMem, hBitmap, 0, targetH, buffer.cast<Void>(), bi, 0);
+
+    final pixels = buffer.asTypedList(bufSize);
+    final rawImage = img.Image.fromBytes(
+      width: targetW, height: targetH,
+      bytes: pixels.buffer,
+      numChannels: 4, order: img.ChannelOrder.bgra,
+    );
+
+    selectObject(hdcMem, hOld);
+    deleteObject(hBitmap);
+    deleteDC(hdcMem);
+    releaseDC(0, hdcScreen);
+    calloc.free(bi);
+    calloc.free(buffer);
+
+    if (rawImage == null) return null;
+
+    final jpeg = img.encodeJpg(rawImage, quality: quality);
+    return Uint8List.fromList(jpeg);
+  }
+
+  static Future<Uint8List?> captureFrame({int maxDimension = 1280, int quality = 50}) async {
     if (!Platform.isWindows || _sendPort == null) return null;
     final response = ReceivePort();
     _sendPort!.send(_CaptureMessage(maxDimension, quality, response.sendPort));

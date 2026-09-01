@@ -1,5 +1,4 @@
-import 'dart:async';
-import 'dart:isolate';
+  import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -43,7 +42,8 @@ class AppState extends ChangeNotifier {
   Completer<void>? _sessionReady;
   AudioService? _hostAudio;
   SessionService? _hostSession;
-  int _captureQuality = 85;
+  int _captureQuality = 60;
+  int _captureDim = 1400;
 
   // Connection logs
   List<String> _connectionLogs = [];
@@ -228,6 +228,11 @@ class AppState extends ChangeNotifier {
       final type = event['type'] as String?;
       if (type == null) return;
       switch (type) {
+        case 'mouse_pos':
+          final x = (event['x'] as num?)?.toDouble() ?? 0;
+          final y = (event['y'] as num?)?.toDouble() ?? 0;
+          InputService.mouseAbsMove(x, y);
+          break;
         case 'mouse_move':
           InputService.mouseMove(
             (event['dx'] as num?)?.toInt() ?? 0,
@@ -259,6 +264,10 @@ class AppState extends ChangeNotifier {
           _captureQuality = (event['value'] as num?)?.toInt() ?? 60;
           _addLog('Calidad cambiada a $_captureQuality');
           break;
+        case 'resolution':
+          _captureDim = (event['dim'] as num?)?.toInt() ?? 1024;
+          _addLog('Resolucion cambiada a $_captureDim');
+          break;
       }
     };
     _hostSession!.onDone = () {
@@ -269,20 +278,16 @@ class AppState extends ChangeNotifier {
     _hostSession!.connect(audioUrl, sessionId).then((_) async {
       _addLog('Captura de pantalla iniciada');
       await ScreenCaptureService.start();
-      // Enviar info de pantalla al cliente para que escale el mouse
-      _hostSession?.sendInputEvent({
-        'type': 'screen_info', 'w': ScreenCaptureService.screenWidth, 'h': ScreenCaptureService.screenHeight,
-      });
       while (_hostSession?.isConnected == true) {
         try {
-          final frame = await ScreenCaptureService.captureFrame(maxDimension: 1600, quality: _captureQuality);
+          final frame = await ScreenCaptureService.captureFrame(maxDimension: _captureDim, quality: _captureQuality);
           if (frame != null && _hostSession?.isConnected == true) {
             _hostSession!.sendFrame(frame);
           }
         } catch (e) {
           _addLog('Error en captura: $e');
         }
-        await Future.delayed(const Duration(milliseconds: 200));
+        await Future.delayed(const Duration(milliseconds: 33));
       }
       ScreenCaptureService.stop();
     }).catchError((e) {

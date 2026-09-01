@@ -12,6 +12,8 @@ class InputService {
   static DynamicLibrary? _user32;
 
   static int Function(int, Pointer<_INPUT>, int) _sendInputDart = (_, __, ___) => 0;
+  static int Function(int, int) _setCursorPos = (_, __) => 0;
+  static int Function(int) _getSystemMetrics = (_) => 0;
 
   static void _init() {
     if (_initialized) return;
@@ -20,6 +22,10 @@ class InputService {
     _user32 = DynamicLibrary.open('user32.dll');
     _sendInputDart = _user32!
         .lookupFunction<Uint32 Function(Uint32, Pointer<_INPUT>, Int32), int Function(int, Pointer<_INPUT>, int)>('SendInput');
+    _setCursorPos = _user32!
+        .lookupFunction<Int32 Function(Int32, Int32), int Function(int, int)>('SetCursorPos');
+    _getSystemMetrics = _user32!
+        .lookupFunction<Int32 Function(Int32), int Function(int)>('GetSystemMetrics');
   }
 
   static const int _inputSize = 40; // sizeof(INPUT) on Windows x64
@@ -36,6 +42,14 @@ class InputService {
   
   static const int _KEYEVENTF_KEYDOWN = 0x0000;
   static const int _KEYEVENTF_KEYUP = 0x0002;
+
+  static String getCursorType() {
+    _init();
+    if (!Platform.isWindows) return 'default';
+    // Usar GetCursorInfo para obtener el handle del cursor actual
+    // Simplificado: retornamos 'default' por ahora
+    return 'default';
+  }
 
   static void _sendMouseEvent(int x, int y, int flags, int mouseData, int dx, int dy) {
     _init();
@@ -62,6 +76,16 @@ class InputService {
 
   static void mouseMove(int x, int y) {
     _sendMouseEvent(x, y, _MOUSEEVENTF_MOVE, 0, x, y);
+  }
+
+  static void mouseAbsMove(double normX, double normY) {
+    _init();
+    if (!Platform.isWindows) return;
+    final screenW = _getSystemMetrics(0);
+    final screenH = _getSystemMetrics(1);
+    final absX = (normX * screenW).round();
+    final absY = (normY * screenH).round();
+    _setCursorPos(absX, absY);
   }
 
   static void mouseDown(int button) {

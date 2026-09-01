@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
-import 'package:system_tray/system_tray.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'providers/app_state.dart';
 import 'screens/home_screen.dart';
@@ -27,11 +26,9 @@ void main() async {
     await windowManager.focus();
   });
 
-  // Prevenir cierre real => minimizar a bandeja
-  windowManager.setPreventClose(true);
-  windowManager.setHasShadow(true);
-
-  _initSystemTray();
+  // La X cierra la app, minimizar la manda al fondo
+  await windowManager.setPreventClose(false);
+  await windowManager.setHasShadow(true);
 
   // Intentar cargar logo como icono de ventana
   try {
@@ -49,39 +46,6 @@ void main() async {
       child: const SpywareApp(),
     ),
   );
-}
-
-Future<void> _initSystemTray() async {
-  final logoPath = File('logo.png').existsSync() ? File('logo.png').absolute.path : '';
-  final tray = SystemTray();
-  await tray.initSystemTray(iconPath: logoPath);
-
-  final menu = Menu();
-  menu.buildFrom([
-    MenuItemLabel(label: 'Mostrar', onClicked: (_) => windowManager.show()),
-    MenuItemLabel(label: 'Salir', onClicked: (_) async {
-      await windowManager.destroy();
-      exit(0);
-    }),
-  ]);
-  await tray.setContextMenu(menu);
-  await tray.setToolTip('AzulRemote - Conexion Remota');
-
-  tray.registerSystemTrayEventHandler((eventName) {
-    if (eventName == 'leftMouseDown' || eventName == 'doubleClick') {
-      windowManager.show();
-    }
-  });
-
-  windowManager.setPreventClose(true);
-  windowManager.addListener(_TrayWindowListener());
-}
-
-class _TrayWindowListener extends WindowListener {
-  @override
-  void onWindowClose() async {
-    await windowManager.hide();
-  }
 }
 
 class SpywareApp extends StatelessWidget {

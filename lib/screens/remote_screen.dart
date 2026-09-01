@@ -27,9 +27,10 @@ class _RemoteScreenState extends State<RemoteScreen> {
   final SessionService _session = SessionService();
 
   Offset _lastPos = Offset.zero;
-  int _quality = 85;
-  double _hostW = 1920;
-  double _hostH = 1080;
+  int _lastButton = 1;
+  int _quality = 60;
+  final GlobalKey _imageAreaKey = GlobalKey();
+  final FocusNode _keyFocus = FocusNode();
 
   @override
   void initState() {
@@ -50,20 +51,24 @@ class _RemoteScreenState extends State<RemoteScreen> {
     _session.onFrame = (frame) {
       if (mounted) setState(() => _currentFrame = frame);
     };
-    _session.onInputEvent = (event) {
-      if (event['type'] == 'screen_info') {
-        if (mounted) setState(() {
-          _hostW = (event['w'] as num?)?.toDouble() ?? 1920;
-          _hostH = (event['h'] as num?)?.toDouble() ?? 1080;
-        });
-      }
-    };
+    _session.onInputEvent = (event) {};
     _session.onDone = () {
       context.read<AppState>().log('Sesión remota finalizada');
+      if (mounted) Navigator.pop(context);
     };
     _session.connect(widget.serverUrl, widget.sessionId).catchError((e) {
       if (mounted) {
         context.read<AppState>().log('Error de sesión remota: $e');
+      }
+    });
+    _keyFocus.requestFocus();
+
+    // Enviar dimension de la ventana al host
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final size = context.size;
+      if (size != null) {
+        final dim = size.shortestSide.round();
+        _session.sendInputEvent({'type': 'resolution', 'dim': dim});
       }
     });
   }
@@ -81,13 +86,13 @@ class _RemoteScreenState extends State<RemoteScreen> {
   void _toggleMouse() => setState(() => _mouseActive = !_mouseActive);
   void _toggleKeyboard() => setState(() => _keyboardActive = !_keyboardActive);
 
-  void _sendMouseMove(Offset pos) {
+  void _sendMousePos(Offset localPos) {
     if (!_mouseActive || _currentFrame == null) return;
-    final dx = (pos.dx - _lastPos.dx).round();
-    final dy = (pos.dy - _lastPos.dy).round();
-    _lastPos = pos;
-    if (dx == 0 && dy == 0) return;
-    _session.sendInputEvent({'type': 'mouse_move', 'dx': dx, 'dy': dy});
+    final box = _imageAreaKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    final x = (localPos.dx / box.size.width).clamp(0.0, 1.0);
+    final y = (localPos.dy / box.size.height).clamp(0.0, 1.0);
+    _session.sendInputEvent({'type': 'mouse_pos', 'x': x, 'y': y});
   }
 
   void _sendMouseDown(int button) {
@@ -115,56 +120,70 @@ class _RemoteScreenState extends State<RemoteScreen> {
     _audio.onLog = null;
     _session.disconnect();
     _audio.dispose();
+    _keyFocus.dispose();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return KeyboardListener(
-      focusNode: FocusNode()..requestFocus(),
-      onKeyEvent: (event) {
-        if (!_keyboardActive) return;
+    return Focus(
+      focusNode: _keyFocus,
+      onKeyEvent: (node, event) {
+        if (!_keyboardActive) return KeyEventResult.ignored;
         if (event is KeyDownEvent) {
           _sendKeyEvent('key_down', event.logicalKey.keyId);
         } else if (event is KeyUpEvent) {
           _sendKeyEvent('key_up', event.logicalKey.keyId);
         }
+        return KeyEventResult.handled;
       },
       child: Scaffold(
         backgroundColor: Colors.black,
         body: Stack(
           children: [
             Positioned.fill(
-              child: _currentFrame != null
-                  ? InteractiveViewer(
-                      minScale: 0.5,
-                      maxScale: 3.0,
-                      child: Listener(
-                        onPointerMove: (e) => _sendMouseMove(e.localPosition),
-                        onPointerDown: (e) {
-                          _lastPos = e.localPosition;
-                          _sendMouseDown(e.buttons & 1 != 0 ? 1 : 2);
-                        },
-                        onPointerUp: (e) => _sendMouseUp(1),
+              child: Stack(
+                key: _imageAreaKey,
+                children: [
+                  _currentFrame != null
+                      ? InteractiveViewer(
+                          minScale: 0.5,
+                          maxScale: 3.0,
                         child: Image.memory(
                           _currentFrame!,
-                          fit: BoxFit.contain,
+                          fit: BoxFit.fill,
                           gaplessPlayback: true,
                         ),
-                      ),
-                    )
-                  : const Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          CircularProgressIndicator(color: Color(0xFF58A6FF)),
-                          SizedBox(height: 16),
-                          Text('Esperando pantalla remota...',
-                              style: TextStyle(color: Colors.white38, fontSize: 14)),
-                        ],
+                        )
+                      : const Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CircularProgressIndicator(color: Color(0xFF58A6FF)),
+                              SizedBox(height: 16),
+                              Text('Esperando pantalla remota...',
+                                  style: TextStyle(color: Colors.white38, fontSize: 14)),
+                            ],
+                          ),
+                        ),
+                  // Listener transparente encima para capturar mouse
+                  if (_currentFrame != null)
+                    Positioned.fill(
+                      child: Listener(
+                        behavior: HitTestBehavior.translucent,
+                        onPointerHover: (e) => _sendMousePos(e.localPosition),
+                        onPointerMove: (e) => _sendMousePos(e.localPosition),
+                    onPointerDown: (e) {
+                      _lastButton = e.buttons & 2 != 0 ? 2 : 1;
+                      _sendMousePos(e.localPosition);
+                      _sendMouseDown(_lastButton);
+                    },
+                    onPointerUp: (e) => _sendMouseUp(_lastButton),
                       ),
                     ),
+                ],
+              ),
             ),
 
             // Boton flotante para mostrar/ocultar UI
