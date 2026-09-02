@@ -10,7 +10,7 @@ set -euo pipefail
 
 SPYWARE_USER="${SPYWARE_USER:-spyware}"
 SPYWARE_DB="${SPYWARE_DB:-spyware}"
-SPYWARE_PASS="${SPYWARE_PASS:-$(openssl rand -base64 24)}"
+SPYWARE_PASS="${SPYWARE_PASS:-$(openssl rand -hex 24)}"
 SERVER_HOST="${SERVER_HOST:-0.0.0.0}"
 SERVER_PORT="${SERVER_PORT:-7980}"
 RELAY_ENABLED="${RELAY_ENABLED:-false}"

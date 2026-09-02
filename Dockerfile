@@ -6,13 +6,13 @@ RUN apk add --no-cache musl-dev
 WORKDIR /app
 
 # Copiar solo lo necesario para compilar
-COPY Cargo.toml ./
+COPY Cargo.toml Cargo.lock ./
 COPY core/ core/
 COPY server/ server/
 COPY relay/ relay/
 
-# Compilar en release (estático con musl)
-RUN cargo build --release -p azuldesk-server && \
+# Compilar en release (estatico con musl), usando el lockfile exacto del repo
+RUN cargo build --release --locked -p azuldesk-server && \
     strip target/release/azuldesk-server
 
 # ============================================================

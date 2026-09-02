@@ -6,7 +6,10 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
       POSTGRES_DB: spyware
     ports:
-      - "7982:5432"
+      # Solo accesible desde el propio servidor (127.0.0.1), no desde internet.
+      # El contenedor "server" no necesita este puerto publicado: se conecta
+      # por la red interna de docker-compose usando el nombre "postgres".
+      - "127.0.0.1:7982:5432"
     volumes:
       - pgdata:/var/lib/postgresql
       - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
