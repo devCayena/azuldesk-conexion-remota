@@ -1,10 +1,11 @@
-import 'dart:typed_data';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
 import '../services/audio_service.dart';
 import '../services/session_service.dart';
+import '../services/vk_mapping.dart';
 
 class RemoteScreen extends StatefulWidget {
   final String peerId;
@@ -31,6 +32,16 @@ class _RemoteScreenState extends State<RemoteScreen> {
   int _quality = 60;
   final GlobalKey _imageAreaKey = GlobalKey();
   final FocusNode _keyFocus = FocusNode();
+
+  // El mouse y el video comparten el mismo canal WebSocket con el host.
+  // Sin throttle, un movimiento rapido del mouse manda decenas de mensajes
+  // por segundo que compiten con los frames JPEG y arruinan la fluidez del
+  // live. Se limita a ~60 posiciones/seg (borde final incluido, para que la
+  // ultima posicion real del cursor siempre llegue).
+  static const Duration _mouseMinInterval = Duration(milliseconds: 16);
+  DateTime _lastMouseSendAt = DateTime.fromMillisecondsSinceEpoch(0);
+  Offset? _pendingMousePos;
+  Timer? _mouseThrottleTimer;
 
   @override
   void initState() {
@@ -86,13 +97,54 @@ class _RemoteScreenState extends State<RemoteScreen> {
   void _toggleMouse() => setState(() => _mouseActive = !_mouseActive);
   void _toggleKeyboard() => setState(() => _keyboardActive = !_keyboardActive);
 
-  void _sendMousePos(Offset localPos) {
-    if (!_mouseActive || _currentFrame == null) return;
+  (double, double)? _normalizedPos(Offset localPos) {
     final box = _imageAreaKey.currentContext?.findRenderObject() as RenderBox?;
-    if (box == null || !box.hasSize) return;
+    if (box == null || !box.hasSize) return null;
     final x = (localPos.dx / box.size.width).clamp(0.0, 1.0);
     final y = (localPos.dy / box.size.height).clamp(0.0, 1.0);
+    return (x, y);
+  }
+
+  void _flushMousePos(double x, double y) {
+    _lastMouseSendAt = DateTime.now();
     _session.sendInputEvent({'type': 'mouse_pos', 'x': x, 'y': y});
+  }
+
+  /// Movimientos normales (hover/drag): throttled a ~60Hz con borde final,
+  /// para no saturar el canal que tambien lleva el video.
+  void _sendMousePos(Offset localPos) {
+    if (!_mouseActive || _currentFrame == null) return;
+    final pos = _normalizedPos(localPos);
+    if (pos == null) return;
+    final (x, y) = pos;
+
+    final elapsed = DateTime.now().difference(_lastMouseSendAt);
+    if (elapsed >= _mouseMinInterval) {
+      _mouseThrottleTimer?.cancel();
+      _mouseThrottleTimer = null;
+      _pendingMousePos = null;
+      _flushMousePos(x, y);
+    } else {
+      _pendingMousePos = Offset(x, y);
+      _mouseThrottleTimer ??= Timer(_mouseMinInterval - elapsed, () {
+        _mouseThrottleTimer = null;
+        final pending = _pendingMousePos;
+        _pendingMousePos = null;
+        if (pending != null) _flushMousePos(pending.dx, pending.dy);
+      });
+    }
+  }
+
+  /// Clicks: se manda la posicion sin throttle, porque un click retrasado
+  /// o desfasado de su posicion real rompe la interaccion.
+  void _sendMousePosImmediate(Offset localPos) {
+    if (!_mouseActive || _currentFrame == null) return;
+    final pos = _normalizedPos(localPos);
+    if (pos == null) return;
+    _mouseThrottleTimer?.cancel();
+    _mouseThrottleTimer = null;
+    _pendingMousePos = null;
+    _flushMousePos(pos.$1, pos.$2);
   }
 
   void _sendMouseDown(int button) {
@@ -105,13 +157,18 @@ class _RemoteScreenState extends State<RemoteScreen> {
     _session.sendInputEvent({'type': 'mouse_up', 'button': button});
   }
 
-  void _sendKeyEvent(String type, int key) {
+  void _sendKeyEvent(String type, LogicalKeyboardKey key) {
     if (!_keyboardActive) return;
-    _session.sendInputEvent({'type': type, 'key': key});
+    // Traducir a Virtual-Key code de Windows: el host inyecta con SendInput,
+    // que espera VK codes, no el keyId interno de Flutter (ver vk_mapping.dart).
+    final vk = vkFromLogicalKey(key);
+    if (vk == null) return; // tecla sin mapeo conocido: no se envia basura
+    _session.sendInputEvent({'type': type, 'key': vk});
   }
 
   @override
   void dispose() {
+    _mouseThrottleTimer?.cancel();
     _session.onFrame = null;
     _session.onDone = null;
     _session.onLog = null;
@@ -132,9 +189,9 @@ class _RemoteScreenState extends State<RemoteScreen> {
       onKeyEvent: (node, event) {
         if (!_keyboardActive) return KeyEventResult.ignored;
         if (event is KeyDownEvent) {
-          _sendKeyEvent('key_down', event.logicalKey.keyId);
+          _sendKeyEvent('key_down', event.logicalKey);
         } else if (event is KeyUpEvent) {
-          _sendKeyEvent('key_up', event.logicalKey.keyId);
+          _sendKeyEvent('key_up', event.logicalKey);
         }
         return KeyEventResult.handled;
       },
@@ -176,7 +233,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
                         onPointerMove: (e) => _sendMousePos(e.localPosition),
                     onPointerDown: (e) {
                       _lastButton = e.buttons & 2 != 0 ? 2 : 1;
-                      _sendMousePos(e.localPosition);
+                      _sendMousePosImmediate(e.localPosition);
                       _sendMouseDown(_lastButton);
                     },
                     onPointerUp: (e) => _sendMouseUp(_lastButton),
