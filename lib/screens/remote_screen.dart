@@ -207,10 +207,12 @@ class _RemoteScreenState extends State<RemoteScreen> {
                       ? InteractiveViewer(
                           minScale: 0.5,
                           maxScale: 3.0,
-                        child: Image.memory(
-                          _currentFrame!,
-                          fit: BoxFit.fill,
-                          gaplessPlayback: true,
+                        child: SizedBox.expand(
+                          child: Image.memory(
+                            _currentFrame!,
+                            fit: BoxFit.fill,
+                            gaplessPlayback: true,
+                          ),
                         ),
                         )
                       : const Center(
